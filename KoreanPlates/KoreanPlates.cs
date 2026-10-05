@@ -237,7 +237,7 @@ namespace KoreanPlates
 			// characters
 			float faceX0 = B + stripW + ph * 0.10f, faceX1 = pw - B - ph * 0.08f;
 			float h = ph * 0.64f;
-			float digitW = 0.56f, hangulW = 0.84f, gapSmall = 0.08f, gapBig = 0.22f;
+			float digitW = 0.60f, hangulW = 0.84f, gapSmall = 0.0f, gapBig = 0.10f;
 			float total = 0;
 			for (int i = 0; i < text.Length; i++)
 				total += (char.IsDigit(text[i]) ? digitW : hangulW) + (i < text.Length - 1 ? GapAfter(text, i, gapSmall, gapBig) : 0f);
