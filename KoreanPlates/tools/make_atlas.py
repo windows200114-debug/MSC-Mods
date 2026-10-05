@@ -6,10 +6,10 @@ Cell order is fixed by CHARS and must match KoreanPlates.Chars in the mod."""
 import sys
 from PIL import Image, ImageDraw, ImageFont
 
-CHARS = "0123456789" + "가나다라마거너더러머버서어저고노도로모보소오조구누두루무부수우주하허호"
+CHARS = "0123456789" + "가나다라마거너더러머버서어저고노도로모보소오조구누두루무부수우주하허호" + "KOR"
 W, H = 128, 192
-font = ImageFont.truetype(sys.argv[1], 150, index=int(sys.argv[2]) if len(sys.argv) > 2 else 0)
-digit_font = ImageFont.truetype(sys.argv[3], 150) if len(sys.argv) > 3 else font
+font = ImageFont.truetype(sys.argv[1], 130, index=int(sys.argv[2]) if len(sys.argv) > 2 else 0)
+digit_font = ImageFont.truetype(sys.argv[3], 140) if len(sys.argv) > 3 else font
 img = Image.new("RGBA", (W * len(CHARS), H), (255, 255, 255, 0))
 d = ImageDraw.Draw(img)
 for i, ch in enumerate(CHARS):

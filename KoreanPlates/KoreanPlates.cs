@@ -18,12 +18,11 @@ namespace KoreanPlates
 		public const string PlayerPlate = "360무2934";
 
 		// Must match tools/make_atlas.py
-		const string Chars = "0123456789" + "가나다라마거너더러머버서어저고노도로모보소오조구누두루무부수우주하허호";
+		const string Chars = "0123456789" + "가나다라마거너더러머버서어저고노도로모보소오조구누두루무부수우주하허호" + "KOR";
 		const string Letters = "가나다라마거너더러머버서어저고노도로모보소오조구누두루무부수우주";
 		const int CellW = 128, CellH = 192;
 
-		// Plate canvas, 520x110 mm ratio
-		const int PW = 1040, PH = 220;
+		const int PlateH = 256; // plate design height in px; width follows the mesh aspect
 
 		Texture2D atlas;
 		Color32[] atlasPixels;
@@ -81,7 +80,7 @@ namespace KoreanPlates
 					assigned[id] = text;
 					ModConsole.Print("KoreanPlates: " + gen.transform.root.name + "/" + gen.name + " " + gen.PlateString + " -> " + text);
 				}
-				var tex = GetPlate(text);
+				var tex = GetPlate(text, rend);
 				var mat = rend.material;
 				if (mat.mainTexture != tex)
 				{
@@ -102,8 +101,7 @@ namespace KoreanPlates
 		{
 			if (satsuma == null) satsuma = GameObject.Find("SATSUMA(557kg, 248)");
 			if (satsuma == null) return;
-			var tex = GetPlate(PlayerPlate);
-			foreach (var rend in satsuma.GetComponentsInChildren<Renderer>(true))
+						foreach (var rend in satsuma.GetComponentsInChildren<Renderer>(true))
 			{
 				var path = PathOf(rend.transform);
 				string texName = "";
@@ -115,6 +113,7 @@ namespace KoreanPlates
 					ModConsole.Print("KoreanPlates: candidate " + path + " tex=" + texName);
 				if (!looksLikePlate) continue;
 				if (rend.GetComponent<RegPlateGen>() != null) continue; // handled above
+				var tex = GetPlate(PlayerPlate, rend);
 				var mat = rend.material;
 				if (mat.mainTexture == tex) continue;
 				mat.mainTexture = tex;
@@ -154,49 +153,108 @@ namespace KoreanPlates
 			return number + Letters[r.Next(Letters.Length)] + r.Next(1000, 10000);
 		}
 
-		Texture2D GetPlate(string text)
+		// Plate geometry of a renderer: UV rectangle its mesh samples, and the rectangle's physical aspect ratio.
+		static void PlateGeometry(Renderer rend, out float u0, out float u1, out float v0, out float v1, out float aspect)
 		{
+			u0 = 0; u1 = 1; v0 = 0; v1 = 1; aspect = 4.7f; // 520x110 mm
+			var mf = rend.GetComponent<MeshFilter>();
+			if (mf == null || mf.sharedMesh == null) return;
+			var uv = mf.sharedMesh.uv;
+			var vs = mf.sharedMesh.vertices;
+			if (uv == null || uv.Length == 0 || uv.Length != vs.Length) return;
+			u0 = v0 = float.MaxValue; u1 = v1 = float.MinValue;
+			foreach (var p in uv)
+			{
+				u0 = Mathf.Min(u0, p.x); u1 = Mathf.Max(u1, p.x);
+				v0 = Mathf.Min(v0, p.y); v1 = Mathf.Max(v1, p.y);
+			}
+			if (u1 - u0 < 0.001f || v1 - v0 < 0.001f) { u0 = v0 = 0; u1 = v1 = 1; return; }
+			Vector3 pu0 = Vector3.zero, pu1 = Vector3.zero, pv0 = Vector3.zero, pv1 = Vector3.zero;
+			int nu0 = 0, nu1 = 0, nv0 = 0, nv1 = 0;
+			float eu = (u1 - u0) * 0.02f, ev = (v1 - v0) * 0.02f;
+			for (int i = 0; i < uv.Length; i++)
+			{
+				if (uv[i].x < u0 + eu) { pu0 += vs[i]; nu0++; }
+				if (uv[i].x > u1 - eu) { pu1 += vs[i]; nu1++; }
+				if (uv[i].y < v0 + ev) { pv0 += vs[i]; nv0++; }
+				if (uv[i].y > v1 - ev) { pv1 += vs[i]; nv1++; }
+			}
+			if (nu0 == 0 || nu1 == 0 || nv0 == 0 || nv1 == 0) return;
+			var sc = rend.transform.lossyScale;
+			float w = Vector3.Scale(pu1 / nu1 - pu0 / nu0, sc).magnitude;
+			float h = Vector3.Scale(pv1 / nv1 - pv0 / nv0, sc).magnitude;
+			if (w > 0.0001f && h > 0.0001f) aspect = Mathf.Clamp(w / h, 1.5f, 8f);
+		}
+
+		Texture2D GetPlate(string text, Renderer rend)
+		{
+			float u0, u1, v0, v1, aspect;
+			PlateGeometry(rend, out u0, out u1, out v0, out v1, out aspect);
+			string key = text + "|" + u0.ToString("F3") + u1.ToString("F3") + v0.ToString("F3") + v1.ToString("F3") + aspect.ToString("F2");
 			Texture2D tex;
-			if (cache.TryGetValue(text, out tex) && tex != null) return tex;
-			tex = Render(text);
-			cache[text] = tex;
+			if (cache.TryGetValue(key, out tex) && tex != null) return tex;
+			tex = Render(text, u0, u1, v0, v1, aspect);
+			cache[key] = tex;
 			return tex;
 		}
 
-		// White matte plate, black characters, thin border (anti-reflective 반사방지 plate look).
-		Texture2D Render(string text)
+		// Korean plate (520x110 mm look): black frame, white matte face, blue KOR strip on the left,
+		// "123가 4568" with a wider gap before the last four digits. Drawn into the UV rectangle the plate mesh uses.
+		Texture2D Render(string text, float u0, float u1, float v0, float v1, float aspect)
 		{
-			var px = new Color32[PW * PH];
-			var white = new Color32(238, 238, 232, 255);
-			var black = new Color32(18, 18, 18, 255);
+			int ph = PlateH, pw = Mathf.RoundToInt(PlateH * aspect);
+			int tw = Mathf.Min(2048, Mathf.Max(pw, Mathf.RoundToInt(pw / (u1 - u0))));
+			int th = Mathf.Min(2048, Mathf.Max(ph, Mathf.RoundToInt(ph / (v1 - v0))));
+			int ox = Mathf.RoundToInt(u0 * tw), oy = Mathf.RoundToInt(v0 * th);
+			pw = Mathf.RoundToInt((u1 - u0) * tw); ph = Mathf.RoundToInt((v1 - v0) * th);
+
+			var white = new Color32(240, 240, 235, 255);
+			var black = new Color32(14, 14, 14, 255);
+			var blue = new Color32(22, 66, 160, 255);
+			var px = new Color32[tw * th];
 			for (int i = 0; i < px.Length; i++) px[i] = white;
 
-			const int B = 8;
-			for (int y = 0; y < PH; y++)
-				for (int x = 0; x < PW; x++)
-					if (x < B || y < B || x >= PW - B || y >= PH - B)
-						px[y * PW + x] = black;
+			int B = Mathf.Max(4, ph / 22); // frame thickness
+			FillRect(px, tw, th, ox, oy, 0, 0, pw, ph, black);
+			FillRect(px, tw, th, ox, oy, B, B, pw - B, ph - B, white);
 
-			// glyph slots: digits narrower than the hangul letter
-			const float digitSlot = 0.78f, hangulSlot = 1.0f;
-			const int gap = 6, margin = 50;
-			float height = PH - 2 * B - 36;
-			float cellH = height;
+			// blue strip with emblem + KOR
+			int stripW = (int)(ph * 0.52f);
+			FillRect(px, tw, th, ox, oy, B, B, B + stripW, ph - B, blue);
+			int ecx = ox + B + stripW / 2, ecy = oy + (int)(ph * 0.68f), er = (int)(stripW * 0.30f);
+			for (int y = ecy - er; y <= ecy + er; y++)
+				for (int x = ecx - er; x <= ecx + er; x++)
+				{
+					int dx = x - ecx, dy = y - ecy, d2 = dx * dx + dy * dy;
+					if (x < 0 || y < 0 || x >= tw || y >= th || d2 > er * er) continue;
+					px[y * tw + x] = d2 > (er * 0.78f) * (er * 0.78f) ? new Color32(235, 240, 250, 255) : new Color32(70, 120, 200, 255);
+				}
+			float kh = ph * 0.22f, kw = kh * 0.60f;
+			float kx = ox + B + stripW / 2f - kw * 1.5f, ky = oy + ph * 0.24f;
+			for (int i = 0; i < 3; i++)
+				DrawCell(px, tw, th, Chars.IndexOf("KOR"[i]), kx + kw * (i + 0.5f), ky, kw, kh, new Color32(240, 245, 255, 255));
+
+			// characters
+			float faceX0 = B + stripW + ph * 0.10f, faceX1 = pw - B - ph * 0.08f;
+			float h = ph * 0.64f;
+			float digitW = 0.56f, hangulW = 0.84f, gapSmall = 0.08f, gapBig = 0.22f;
 			float total = 0;
-			foreach (char c in text) total += char.IsDigit(c) ? digitSlot : hangulSlot;
-			float availW = PW - 2 * B - 2 * margin - (text.Length - 1) * gap;
-			float unit = Mathf.Min(CellW * cellH / CellH * 1.0f, availW / total); // pixel width of a 1.0 slot
-			float w = total * unit + (text.Length - 1) * gap;
-			float x0 = (PW - w) / 2f;
-			foreach (char c in text)
+			for (int i = 0; i < text.Length; i++)
+				total += (char.IsDigit(text[i]) ? digitW : hangulW) + (i < text.Length - 1 ? GapAfter(text, i, gapSmall, gapBig) : 0f);
+			float availW = faceX1 - faceX0;
+			if (total * h > availW) h = availW / total;
+			float cur = faceX0 + (availW - total * h) / 2f;
+			for (int i = 0; i < text.Length; i++)
 			{
-				float cw = (char.IsDigit(c) ? digitSlot : hangulSlot) * unit;
-				int idx = Chars.IndexOf(c);
-				if (idx >= 0) DrawCell(px, idx, x0 + cw / 2f, PH / 2f, cw, cellH, black);
-				x0 += cw + gap;
+				char c = text[i];
+				bool digit = char.IsDigit(c);
+				float cw = (digit ? digitW : hangulW) * h;
+				float chH = digit ? h : h * 0.82f;
+				DrawCell(px, tw, th, Chars.IndexOf(c), ox + cur + cw / 2f, oy + ph * 0.5f, cw, chH, black);
+				cur += cw + (i < text.Length - 1 ? GapAfter(text, i, gapSmall, gapBig) * h : 0f);
 			}
 
-			var tex = new Texture2D(PW, PH, TextureFormat.ARGB32, true);
+			var tex = new Texture2D(tw, th, TextureFormat.ARGB32, true);
 			tex.SetPixels32(px);
 			tex.wrapMode = TextureWrapMode.Clamp;
 			tex.filterMode = FilterMode.Trilinear;
@@ -205,25 +263,38 @@ namespace KoreanPlates
 			return tex;
 		}
 
-		void DrawCell(Color32[] px, int idx, float cx, float cy, float width, float height, Color32 col)
+		static void FillRect(Color32[] px, int tw, int th, int ox, int oy, int x0, int y0, int x1, int y1, Color32 c)
+		{
+			for (int y = Mathf.Max(0, oy + y0); y < Mathf.Min(th, oy + y1); y++)
+				for (int x = Mathf.Max(0, ox + x0); x < Mathf.Min(tw, ox + x1); x++)
+					px[y * tw + x] = c;
+		}
+
+		// Wider gap after the hangul letter (separates the four-digit serial).
+		static float GapAfter(string text, int i, float small, float big)
+		{
+			return !char.IsDigit(text[i]) ? big : small;
+		}
+
+		void DrawCell(Color32[] px, int tw, int th, int idx, float cx, float cy, float width, float height, Color32 col)
 		{
 			int hw = (int)(width / 2f), hh = (int)(height / 2f);
 			int atlasW = CellW * Chars.Length;
 			for (int dy = -hh; dy < hh; dy++)
 			{
 				int y = (int)cy + dy;
-				if (y < 0 || y >= PH) continue;
+				if (y < 0 || y >= th) continue;
 				float v = (dy + hh) / (2f * hh); // 0..1 bottom->top of the cell (texture origin is bottom-left)
 				int ay = Mathf.Clamp((int)(v * CellH), 0, CellH - 1);
 				for (int dx = -hw; dx < hw; dx++)
 				{
 					int x = (int)cx + dx;
-					if (x < 0 || x >= PW) continue;
+					if (x < 0 || x >= tw) continue;
 					float u = (dx + hw) / (2f * hw);
 					int ax = idx * CellW + Mathf.Clamp((int)(u * CellW), 0, CellW - 1);
 					byte a = atlasPixels[ay * atlasW + ax].a;
 					if (a == 0) continue;
-					int p = y * PW + x;
+					int p = y * tw + x;
 					var d = px[p];
 					px[p] = new Color32(
 						(byte)((col.r * a + d.r * (255 - a)) / 255),
