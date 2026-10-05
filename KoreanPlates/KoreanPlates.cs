@@ -85,6 +85,9 @@ namespace KoreanPlates
 				if (mat.mainTexture != tex)
 				{
 					mat.mainTexture = tex;
+				// the texture is laid out for the raw mesh UVs; drop any tiling/offset the original material used
+				mat.mainTextureScale = Vector2.one;
+				mat.mainTextureOffset = Vector2.zero;
 					// anti-reflective plate: matte surface, no specular highlight
 					if (mat.HasProperty("_SpecColor")) mat.SetColor("_SpecColor", Color.black);
 					if (mat.HasProperty("_Shininess")) mat.SetFloat("_Shininess", 0.01f);
@@ -114,13 +117,17 @@ namespace KoreanPlates
 				if (!looksLikePlate) continue;
 				if (rend.GetComponent<RegPlateGen>() != null) continue; // handled above
 				var tex = GetPlate(PlayerPlate, rend);
+				Vector2 oldScale = shared != null ? shared.mainTextureScale : Vector2.one, oldOffset = shared != null ? shared.mainTextureOffset : Vector2.zero;
 				var mat = rend.material;
 				if (mat.mainTexture == tex) continue;
 				mat.mainTexture = tex;
+				// the texture is laid out for the raw mesh UVs; drop any tiling/offset the original material used
+				mat.mainTextureScale = Vector2.one;
+				mat.mainTextureOffset = Vector2.zero;
 				if (mat.HasProperty("_SpecColor")) mat.SetColor("_SpecColor", Color.black);
 				if (mat.HasProperty("_Shininess")) mat.SetFloat("_Shininess", 0.01f);
 				if (satsumaDone.Add(rend.GetInstanceID()))
-					ModConsole.Print("KoreanPlates: Satsuma plate replaced " + path + " tex=" + texName);
+					ModConsole.Print("KoreanPlates: Satsuma plate replaced " + path + " tex=" + texName + " tiling=" + oldScale + " offset=" + oldOffset);
 			}
 			satsumaDumped = true;
 		}
