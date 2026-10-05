@@ -6,4 +6,4 @@ The player's Satsuma gets `360무2934`; other cars get a stable generated Korean
 Install: build (or take `KoreanPlates.dll`) and put it in `Mods` (MSCLoader 1.x). Check the in-game console (F1) for
 `KoreanPlates:` lines listing which plate objects were replaced.
 
-Build: `MSCMANAGED=<game>/mysummercar_Data/Managed`, then `msbuild` / `mcs` (see csproj). `tools/make_atlas.py` regenerates `glyphs.png`.
+Build: `./build.sh <game>/mysummercar_Data/Managed` (must compile against the game's own mscorlib, the game runs the .NET 2.0 runtime). `tools/make_atlas.py` regenerates `glyphs.png`.
