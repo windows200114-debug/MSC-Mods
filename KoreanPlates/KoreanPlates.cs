@@ -64,6 +64,7 @@ namespace KoreanPlates
 		{
 			if (atlas == null || Time.time < nextScan) return;
 			nextScan = Time.time + 1f;
+			ScanSatsuma();
 
 			// Plates are parts that can be (re)spawned, and RegPlateGen rewrites the texture on start,
 			// so keep checking and re-apply when the game's texture is back.
@@ -91,6 +92,45 @@ namespace KoreanPlates
 					if (mat.HasProperty("_Glossiness")) mat.SetFloat("_Glossiness", 0f);
 				}
 			}
+		}
+
+		// The Satsuma's own plates are not RegPlateGen objects (texture is baked), so match them by name/texture.
+		readonly HashSet<int> satsumaDone = new HashSet<int>();
+		bool satsumaDumped;
+
+		void ScanSatsuma()
+		{
+			if (satsuma == null) satsuma = GameObject.Find("SATSUMA(557kg, 248)");
+			if (satsuma == null) return;
+			var tex = GetPlate(PlayerPlate);
+			foreach (var rend in satsuma.GetComponentsInChildren<Renderer>(true))
+			{
+				var path = PathOf(rend.transform);
+				string texName = "";
+				var shared = rend.sharedMaterial;
+				if (shared != null && shared.mainTexture != null) texName = shared.mainTexture.name;
+				string n = (rend.name + " " + texName).ToLower();
+				bool looksLikePlate = n.Contains("plate") || n.Contains("vbx") || n.Contains("licen") || n.Contains("regist");
+				if (!satsumaDumped && (looksLikePlate || n.Contains("reg")))
+					ModConsole.Print("KoreanPlates: candidate " + path + " tex=" + texName);
+				if (!looksLikePlate) continue;
+				if (rend.GetComponent<RegPlateGen>() != null) continue; // handled above
+				var mat = rend.material;
+				if (mat.mainTexture == tex) continue;
+				mat.mainTexture = tex;
+				if (mat.HasProperty("_SpecColor")) mat.SetColor("_SpecColor", Color.black);
+				if (mat.HasProperty("_Shininess")) mat.SetFloat("_Shininess", 0.01f);
+				if (satsumaDone.Add(rend.GetInstanceID()))
+					ModConsole.Print("KoreanPlates: Satsuma plate replaced " + path + " tex=" + texName);
+			}
+			satsumaDumped = true;
+		}
+
+		static string PathOf(Transform t)
+		{
+			string p = t.name;
+			while (t.parent != null) { t = t.parent; p = t.name + "/" + p; }
+			return p;
 		}
 
 		bool IsPlayerCar(Transform t)
